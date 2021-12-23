@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.21...3.22)
 include(CMakePrintHelpers)
 
 project(OpenPlaya
-	VERSION 0.1
+	VERSION 0.0.1
 	LANGUAGES C)
 
 # The project version number.
