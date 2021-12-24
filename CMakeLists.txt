@@ -21,7 +21,7 @@ if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 	set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 	# Test only for the main app
-	include(CTest)
+	# include(CTest)
 
 	# Docs only for the main app
 	find_package(Doxygen OPTIONAL_COMPONENTS dot)
@@ -45,7 +45,8 @@ endif()
 include(FetchContent)
 
 # The list of subdirectories where a CMakeLists.txt file exists to compile code prior to configuring the executable
-add_subdirectory(core)
+add_subdirectory(lib)
+add_subdirectory(src)
 
 # Tests for the main app
 if ((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME OR MODERN_CMAKE_BUILD_TESTING) AND BUILD_TESTING)
@@ -54,12 +55,14 @@ endif()
 
 # Configuration for the executable files and linking dependencies
 file(GLOB_RECURSE SOURCES
-		core/*.h
-		core/*.c)
+		src/*.h
+		src/*.c)
 
-add_executable(OpenPlaya
+add_executable(${PROJECT_NAME}
 		${SOURCES})
 
-# Include and Link FFMpeg lib headers
-target_include_directories(OpenPlaya PRIVATE ${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR})
-target_link_libraries(OpenPlaya PRIVATE ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY})
+# Include lib headers
+target_include_directories(${PROJECT_NAME} PRIVATE ${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR})
+
+# Link libs
+target_link_libraries(${PROJECT_NAME} PRIVATE ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY} unity)

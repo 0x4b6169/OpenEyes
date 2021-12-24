@@ -12,6 +12,7 @@
 
 
 #include <stdio.h>
+#include <string.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include "logging/log.h"

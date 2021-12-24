@@ -7,3 +7,5 @@ This format is based on [Keep a Changelog](https://keepachangelog.com/) and adhe
 - Starter main app that processes frames from a video
 - Configure CMake for Makefile generation and portability
 - Configure Doxygen for documentation
+- Add logging lib
+- Include unity testing library
