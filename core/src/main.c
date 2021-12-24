@@ -14,16 +14,16 @@
 #include <stdio.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include "logging/log.h"
 
 static void save_gray_frame(unsigned char *buf, int wrap, int xsize, int ysize, char *filename)
 {
         FILE *f;
         int i;
-	    char file[512]; // = "./output/"; //strcat("./output/", filename);
+	    char file[512];
 	    strcpy(file, "./output/");
 	    strcat(file, filename);
 	    f = fopen(file,"w");
-	    // f = fopen(strcat("./output/", filename),"w");
 
         fprintf(f, "P5\n%d %d\n%d\n", xsize, ysize, 255);
 
@@ -38,7 +38,7 @@ static int decode_packet(AVPacket *pPacket, AVCodecContext *pCodecCtx, AVFrame *
 
         if (response < 0)
         {
-                //logging("ERROR - Could not send packet to the decoder");
+                log_error("Could not send packet to the decoder");
                 return response;
         }
 
@@ -56,20 +56,20 @@ static int decode_packet(AVPacket *pPacket, AVCodecContext *pCodecCtx, AVFrame *
 
                 if (response >= 0)
                 {
-//                        logging("Frame %d (type=%c, size=%d, format=%d) pts %d key_frame %d [DTS %d]",
-//                        pCodecCtx->frame_number,
-//                        pFrame->pkt_size,
-//                        pFrame->format,
-//                        pFrame->pts,
-//                        pFrame->key_frame,
-//                        pFrame->coded_picture_number;
+                        log_info("Frame %d (type=%c, size=%d, format=%d) pts %d key_frame %d [DTS %d]",
+                        pCodecCtx->frame_number,
+                        pFrame->pkt_size,
+                        pFrame->format,
+                        pFrame->pts,
+                        pFrame->key_frame,
+                        pFrame->coded_picture_number);
 
                         char frame_filename[1024];
                         snprintf(frame_filename, sizeof(frame_filename), "%s-%d.pgm", "frame", pCodecCtx->frame_number);
 
                         if (pFrame->format != AV_PIX_FMT_YUV420P)
                         {
-                                //logging("WARNING - The generated file may not be a grayscale image");
+                                log_debug("The generated file may not be a grayscale image");
                         }
 
                         save_gray_frame(pFrame->data[0], pFrame->linesize[0], pFrame->width, pFrame->height, frame_filename);
@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
 	// Open and read media file
 	if (avformat_open_input(&pFormatCtx, argv[1], NULL, NULL) != 0)
 	{
-		//logging("ERROR - File not found, memory was not (or could not be) allocated.");
+		log_error("File not found, memory was not (or could not be) allocated.");
 		return -1;
 	}
 	
@@ -96,7 +96,7 @@ int main(int argc, char *argv[])
 	
 	if (avformat_find_stream_info(pFormatCtx, NULL) < 0)
 	{
-		//logging("ERROR - Could not retrieve stream info");
+		log_error("Could not retrieve stream info");
 		return -1;
 	}
 
@@ -120,7 +120,7 @@ int main(int argc, char *argv[])
 		
 		if (pLocalCodec == NULL) 
 		{
-			//logging("ERROR - Unsupported codec");
+			log_debug("Unsupported codec");
 			continue;
 		}
 
@@ -130,40 +130,40 @@ int main(int argc, char *argv[])
 			if (videoStreamIndex == -1)
 			{
 				videoStreamIndex = i;
-				//logging("INFO - videoStreamIndex %d", videoStreamIndex);
+				log_info("videoStreamIndex %d", videoStreamIndex);
 				pCodec = pLocalCodec;
 				pCodecParameters = pLocalCodecParameters;
 			}
-			//logging("Video Codec: resolution %d x %d", pLocalCodecParameters->width, pLocalCodecParameters->height);
+			log_info("Video Codec: resolution %d x %d", pLocalCodecParameters->width, pLocalCodecParameters->height);
 		} 
 		else if (pLocalCodecParameters->codec_type == AVMEDIA_TYPE_AUDIO) {
-			//logging("Audio Codec: %d channels, sample rate %d", pLocalCodecParameters->channels, pLocalCodecParameters->sample_rate);
+			log_info("Audio Codec: %d channels, sample rate %d", pLocalCodecParameters->channels, pLocalCodecParameters->sample_rate);
 		}
 
-		//logging("\tCodec %s ID %d bit_rate %lld", pLocalCodec->long_name, pLocalCodec->id, pLocalCodecParameters->bit_rate);
+		log_info("\tCodec %s ID %d bit_rate %lld", pLocalCodec->long_name, pLocalCodec->id, pLocalCodecParameters->bit_rate);
 		
 
 		if (videoStreamIndex == -1)
 		{
-			//logging("ERROR - File %s does not contain a video stream", argv[1]);
+            log_error("File %s does not contain a video stream", argv[1]);
 			return -1; 
 		}
 
 		AVCodecContext *pCodecCtx = avcodec_alloc_context3(pCodec);
 		if (!pCodecCtx)
 		{
-			//logging("ERROR - Failed to allocate memory for codec context");
+            log_error("Failed to allocate memory for codec context");
 			return -1;
 		}
 
 		if (avcodec_parameters_to_context(pCodecCtx, pCodecParameters) < 0)
 		{
-			//logging("ERROR - Failed to copy codec params to codec context");
+            log_error("Failed to copy codec params to codec context");
 		}
 
 		if (avcodec_open2(pCodecCtx, pCodec, NULL) < 0)
 		{
-			//logging("ERROR - Failed to open codec through avcodec_open2");
+            log_error("Failed to open codec through avcodec_open2");
 			return -1;
 		}
 
@@ -171,14 +171,14 @@ int main(int argc, char *argv[])
 		AVPacket *pPacket = av_packet_alloc();
 		if (!pPacket)
 		{
-			//logging("ERROR - Failed to allocate memory for AVPacket");
+            log_error("Failed to allocate memory for AVPacket");
 			return -1;
 		}
 
 		AVFrame *pFrame = av_frame_alloc();
 		if (!pFrame)
 		{
-			//logging("ERROR - Failed to allocate memory for AVFrame");
+            log_error("Failed to allocate memory for AVFrame");
 			return -1;
 		}
 
@@ -189,7 +189,7 @@ int main(int argc, char *argv[])
 		{
 			if (pPacket->stream_index == videoStreamIndex)
 			{
-				//logging("AVPacket->pts %" PRId64, pPacket->pts);
+				log_info("AVPacket->pts %" PRId64, pPacket->pts);
 				response = decode_packet(pPacket, pCodecCtx, pFrame);
 				if (response < 0)
 					break;
@@ -200,7 +200,7 @@ int main(int argc, char *argv[])
 			av_packet_unref(pPacket);
 		}
 
-		//logging("INFO - Releasing all resources");
+		log_info("Releasing all resources");
 
 		avformat_close_input(&pFormatCtx);
 		av_packet_free(&pPacket);

@@ -1,4 +1,3 @@
-# 3.21...3.22 because there is a new feature that I want to continue forward with at this version
 cmake_minimum_required(VERSION 3.21...3.22)
 
 include(CMakePrintHelpers)
@@ -54,9 +53,13 @@ if ((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME OR MODERN_CMAKE_BUILD_TESTING) AND
 endif()
 
 # Configuration for the executable files and linking dependencies
-add_executable(OpenPlaya core/src/main.c)
+file(GLOB_RECURSE SOURCES
+		core/*.h
+		core/*.c)
+
+add_executable(OpenPlaya
+		${SOURCES})
 
 # Include and Link FFMpeg lib headers
 target_include_directories(OpenPlaya PRIVATE ${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR})
 target_link_libraries(OpenPlaya PRIVATE ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY})
-
