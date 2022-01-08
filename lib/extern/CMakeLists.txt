@@ -5,6 +5,8 @@ find_library(AVCODEC_LIBRARY avcodec)
 find_path(AVFORMAT_INCLUDE_DIR libavformat/avformat.h)
 find_library(AVFORMAT_LIBRARY avformat)
 
+find_path(AVUTIL_INCLUDE_DIR libavutil/avutil.h)
+find_library(AVUTIL_LIBRARY avutil)
 
 # Fetch and include unity testing library
 FetchContent_Declare(

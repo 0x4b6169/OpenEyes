@@ -3,12 +3,9 @@
 ### About
 A place where you can't phish.
 
-### Build Requirements / Recommendations
-- Clang Apple version 13.0.0 (clang-1300.0.29.30) Target: x86_64-apple-darwin21.1.0
-- [CMake v3.22.1](https://cmake.org/download/)
-- [FFMpeg v4.4.1](https://www.ffmpeg.org/download.html)
-- [Doxygen v1.9.2](https://www.doxygen.nl/manual/install.html#install_src_unix) (Optional)
-  - [Graphviz v2.50.0](https://www.graphviz.org/download/) (Optional)
+### Build Steps (Navigate to /docs to read md file, hosting Doxygen files soon)
+- @subpage Build-MacOS.md
+- @subpage Build-LinuxMintUbuntu.md
 
 ### Build, Compile, and Run the app
 - **Generate make config** -`cmake -S . -B build` - generates Makefiles for the app from project root dir

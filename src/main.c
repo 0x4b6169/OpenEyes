@@ -15,6 +15,7 @@
 #include <string.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include <libavutil/avutil.h>
 #include "logging/log.h"
 
 static void save_gray_frame(unsigned char *buf, int wrap, int xsize, int ysize, char *filename)

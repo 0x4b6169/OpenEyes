@@ -31,6 +31,14 @@ if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 		message(STATUS "Doxygen not found, not building docs")
 	endif()
 
+	# Create build dir for compile-time
+	if(EXISTS "build")
+		message(STATUS "Build dir already exists")
+	else()
+		message(STATUS "Created build dir")
+		file(MAKE_DIRECTORY "build")
+	endif()
+
 	# Create output dir for run-time
 	if(EXISTS "output")
 		message(STATUS "Output dir already exists")
@@ -62,7 +70,7 @@ add_executable(${PROJECT_NAME}
 		${SOURCES})
 
 # Include lib headers
-target_include_directories(${PROJECT_NAME} PRIVATE ${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR})
+target_include_directories(${PROJECT_NAME} PRIVATE ${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR} ${AVUTIL_INCLUDE_DIR})
 
 # Link libs
-target_link_libraries(${PROJECT_NAME} PRIVATE ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY} unity)
+target_link_libraries(${PROJECT_NAME} PRIVATE ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY} ${AVUTIL_LIBRARY} unity)
