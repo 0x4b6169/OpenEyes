@@ -1,215 +1,306 @@
-/**
- * @file
- * @param buf
- * @param wrap
- * @param xsize
- * @param ysize
- * @param filename
- *
- * Save gray frame
- *
- */
-
-
-#include <stdio.h>
-#include <string.h>
 #include <libavformat/avformat.h>
+#include <libavdevice/avdevice.h>
 #include <libavcodec/avcodec.h>
-#include <libavutil/avutil.h>
+#include <libavutil/imgutils.h>
+#include <libswscale/swscale.h>
 #include "logging/log.h"
+#include <SDL2/SDL.h>
 
-static void save_gray_frame(unsigned char *buf, int wrap, int xsize, int ysize, char *filename)
+#define SCREEN_WIDTH 1920
+#define SCREEN_HEIGHT 1080
+
+// https://www.theverge.com/2022/1/20/22892152/google-project-iris-ar-headset-2024 people to network with
+
+// First method is initialization of the FFMpeg libary. This library takes an input device (in this application's case the AV input device is
+// programmed to capture the screen of the device). This method should be reusable for any input device for any future projects with varying
+// operating systems / input drivers in general.
+
+// Second method is the initialization, input-setting, and rendering of an SDL2 window. This functionality may never be used, but is a cool project to
+// have completed in the event that I can paint to the screen. Initially planning to use warning windows that pop-up on screen at the bottom right that
+// describe threat level.
+
+// Third method will be a data streaming method that will send frames to a machine learning algorithm. This algorithm will hopefully live on the same
+// device but may also be in the cloud initially for PoC.
+
+
+// Idea - turn this application into a workflow tool with autocomplete ideas based on what the user does on an average day
+
+int thread_exit = 0;
+
+int sfp_refresh_thread(void *opaque)
 {
-        FILE *f;
-        int i;
-	    char file[512];
-	    strcpy(file, "./output/");
-	    strcat(file, filename);
-	    f = fopen(file,"w");
-
-        fprintf(f, "P5\n%d %d\n%d\n", xsize, ysize, 255);
-
-        for (i = 0; i < ysize; i++)
-            fwrite(buf + i * wrap, 1, xsize, f);
-        fclose(f);
+    int ret;
+    while (thread_exit == 0) {
+        SDL_Event event;
+        event.type = SDL_USEREVENT;
+        ret = SDL_PushEvent(&event);
+        if (ret < 0)
+        {
+            log_error( "Could not push event - %s", SDL_GetError());
+            return -1;
+        }
+        SDL_Delay(40);
+    }
+    return 0;
 }
 
-static int decode_packet(AVPacket *pPacket, AVCodecContext *pCodecCtx, AVFrame *pFrame)
-{
-        int response = avcodec_send_packet(pCodecCtx, pPacket);
+int main(int argc, char *argv[]) {
 
-        if (response < 0)
+    AVFormatContext *formatContext = NULL;
+    formatContext = avformat_alloc_context();
+
+    AVCodecContext *codecContext = NULL;
+    AVCodec *codec = NULL;
+    AVCodecParameters *codecParameters = NULL;
+
+
+    int i, ret, videoIndex;
+
+    avdevice_register_all();
+
+    AVDictionary *options = NULL;
+    av_dict_set(&options, "framerate", "30", 0);
+    av_dict_set(&options, "video_size", "1920x1080", 0);
+
+    AVInputFormat *inputFormat;
+    inputFormat = av_find_input_format("avfoundation");
+
+    ret = avformat_open_input(&formatContext, "1:none", inputFormat, &options);
+    if (ret < 0)
+    {
+        log_error("Error opening the input stream - %s", av_err2str(ret));
+        return -1;
+    }
+
+    ret = avformat_find_stream_info(formatContext, NULL);
+    if (ret < 0)
+    {
+        log_error("Error retrieving stream info - %s", av_err2str(ret));
+        return -1;
+    }
+
+    // Get the parameters so you can access details about the codec in the AVFormat
+    AVCodecParameters *localCodecParameters = NULL;
+    AVCodec *localCodec = NULL;
+    videoIndex = -1;
+
+    for (i = 0; i < formatContext->nb_streams; i++)
+    {
+        localCodecParameters = formatContext->streams[i]->codecpar;
+        localCodec = avcodec_find_decoder(localCodecParameters->codec_id);
+        if (localCodec == NULL)
         {
-                log_error("Could not send packet to the decoder");
-                return response;
+            log_error("Unsupported codec.");
+            continue;
+        }
+
+        if (localCodecParameters->codec_type == AVMEDIA_TYPE_VIDEO)
+        {
+            if (videoIndex == -1)
+            {
+                videoIndex = i;
+                log_info("Video index = %s, video codec type = %s", videoIndex, localCodecParameters->codec_type);
+                codecParameters = localCodecParameters;
+                codec = localCodec;
+            }
+            log_info("Video Codec: resolution %d x %d", codecParameters->width, codecParameters->height);
+        }
+
+        if (videoIndex == -1)
+        {
+            log_error("A video input stream was not found.");
+            return -1;
+        }
+
+        codecContext = avcodec_alloc_context3(codec);
+        if (codecContext == NULL)
+        {
+            log_error("Could not allocate memory for the codec.");
+            return -1;
+        }
+
+        ret = avcodec_parameters_to_context(codecContext, codecParameters);
+        if (ret < 0)
+        {
+            log_error("Failed to copy codec params to codec context - %s", av_err2str(ret));
+            return -1;
+        }
+
+        ret = avcodec_open2(codecContext, codec, NULL);
+        if (ret < 0)
+        {
+            log_error("Could not open the codec.");
+            return -1;
         }
 
 
-        while (response >= 0) {
+        /*
+         *
+         * THIS IS WHERE THE FRAME AND WINDOW BEGINS
+         *
+         */
+        AVFrame *frame = NULL;
+        AVFrame *frameYUV = NULL;
+        frame = av_frame_alloc();
+        frameYUV = av_frame_alloc();
 
-                response = avcodec_receive_frame(pCodecCtx, pFrame);
-                if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
-                        break;
-                }
-                else if (response < 0) {
-                        //logging("ERROR - Could not receive frame from the decoder: %s", av_err2str(response));
-                        return response;
-                }
+        ret = SDL_Init(SDL_INIT_VIDEO);
+        if (ret < 0)
+        {
+            log_error( "Could not initialize SDL - %s", SDL_GetError());
+            return -1;
+        }
 
-                if (response >= 0)
+        SDL_Window *window = NULL;
+        SDL_Renderer *renderer = NULL;
+
+        window = SDL_CreateWindow("OpenPlaya", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE);
+        if (window == NULL)
+        {
+            log_error( "Could not create SDL window - %s", SDL_GetError());
+            return -1;
+        }
+
+        renderer = SDL_CreateRenderer(window, -1, 0);
+        if (renderer == NULL)
+        {
+            log_error( "Could not create SDL renderer - %s", SDL_GetError());
+            return -1;
+        }
+
+        SDL_Rect rect;
+        rect.x = 0;
+        rect.y = 0;
+        rect.w = SCREEN_WIDTH;
+        rect.h = SCREEN_HEIGHT;
+
+        AVPacket *packet = NULL;
+        packet = av_packet_alloc();
+
+        log_info("before sws context");
+
+        frameYUV->width = frame->width = codecContext->width;
+        frameYUV->height = frame->height = codecContext->height;
+        frameYUV->channels = frame->channels;
+        frameYUV->channel_layout = frame->channel_layout;
+        frameYUV->format = AV_PIX_FMT_YUV420P;
+
+        struct SwsContext *img_sws_context = NULL;
+        img_sws_context = sws_getCachedContext(img_sws_context, frame->width, frame->height,
+                                               codecContext->pix_fmt, frameYUV->width, frameYUV->height,
+                                               AV_PIX_FMT_YUV420P, 0, NULL, NULL, NULL);
+
+        // Allocate destination memory for frameYUV (target) buffer
+        ret = av_image_alloc(frameYUV->data, frameYUV->linesize,
+                             frameYUV->width, frameYUV->height, frameYUV->format, 1);
+        if (ret < 0)
+        {
+            fprintf(stderr, "Could not allocate destination image\n");
+            return -1;
+        }
+
+        log_info("after sws context");
+
+        SDL_Thread *thread = SDL_CreateThread(sfp_refresh_thread, NULL, NULL);
+        if (thread == NULL)
+        {
+            log_error( "Could not create new SDL thread - %s", SDL_GetError());
+            return -1;
+        }
+
+        SDL_Event *event;
+
+        for (;;)
+        {
+            ret = SDL_WaitEvent(event);
+            if (ret < 0)
+            {
+                log_error( "Did not find event - %s", SDL_GetError());
+                return -1;
+            }
+
+            log_info("wait for event");
+
+            if (event->type == SDL_USEREVENT)
+            {
+                log_info("sdluserevent");
+                if (av_read_frame(formatContext, packet) >= 0)
                 {
-                        log_info("Frame %d (type=%c, size=%d, format=%d) pts %d key_frame %d [DTS %d]",
-                        pCodecCtx->frame_number,
-                        pFrame->pkt_size,
-                        pFrame->format,
-                        pFrame->pts,
-                        pFrame->key_frame,
-                        pFrame->coded_picture_number);
+                    log_info("read frame");
+                    if (packet->stream_index == videoIndex)
+                    {
+                        SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_YV12, SDL_TEXTUREACCESS_STATIC,
+                                                                 codecContext->width, codecContext->height);
 
-                        char frame_filename[1024];
-                        snprintf(frame_filename, sizeof(frame_filename), "%s-%d.pgm", "frame", pCodecCtx->frame_number);
-
-                        if (pFrame->format != AV_PIX_FMT_YUV420P)
+                        ret = avcodec_send_packet(codecContext, packet);
+                        if (ret < 0)
                         {
-                                log_debug("The generated file may not be a grayscale image");
+                            log_error("Error sending packet to decoder - %s", av_err2str(ret));
+                            return -1;
                         }
 
-                        save_gray_frame(pFrame->data[0], pFrame->linesize[0], pFrame->width, pFrame->height, frame_filename);
+                        ret = avcodec_receive_frame(codecContext, frame);
+                        if (ret < 0)
+                        {
+                            log_error("Error receiving decoded output from avcodec_send_packet - %s", av_err2str(ret));
+                            return -1;
+                        }
+
+                        log_info("frame height: %d, frame width: %d, frame format: %d",
+                                 frame->height,
+                                 frame->width,
+                                 frame->format);
+
+                        log_info("frameYUV height: %d, frameYUV width: %d, frameYUV format: %d",
+                                 frameYUV->height,
+                                 frameYUV->width,
+                                 frameYUV->format);
+
+                        log_info("Before scale");
+
+                        sws_scale(img_sws_context, (const uint8_t *const *) frame->data, frame->linesize, 0, SCREEN_HEIGHT,
+                                  frameYUV->data, frameYUV->linesize);
+
+
+
+                        log_info("After scale");
+
+                        SDL_UpdateYUVTexture(texture, &rect,
+                                             frameYUV->data[0], frameYUV->linesize[0],
+                                             frameYUV->data[1], frameYUV->linesize[1],
+                                             frameYUV->data[2], frameYUV->linesize[2]);
+
+                        SDL_RenderClear(renderer);
+                        SDL_RenderCopy(renderer, texture, NULL, &rect);
+                        SDL_RenderPresent(renderer);
+                    }
                 }
+            }
+
+            if (event->type == SDL_QUIT)
+            {
+                log_info("Quitting application.");
+                thread_exit = -1;
+                break;
+            }
+
+//            else {
+//                log_error("Event type is not SDL_USEREVENT");
+//                thread_exit = -1;
+//                break;
+//            }
         }
-	return 0;
+
+        av_packet_free(&packet);
+        av_frame_free(&frame);
+
+    }
+
+    SDL_Quit();
+
+    avcodec_close(codecContext);
+    avformat_close_input(&formatContext);
+
+    return 0;
+
 }
-
-int main(int argc, char *argv[]) 
-{
-	(void)argc;
-	AVFormatContext *pFormatCtx = NULL;
-	pFormatCtx = avformat_alloc_context();
-	
-
-	// Open and read media file
-	if (avformat_open_input(&pFormatCtx, argv[1], NULL, NULL) != 0)
-	{
-		log_error("File not found, memory was not (or could not be) allocated.");
-		return -1;
-	}
-	
-	printf("Format %s duration %lld us\n", pFormatCtx->iformat->long_name, pFormatCtx->duration);
-	
-	if (avformat_find_stream_info(pFormatCtx, NULL) < 0)
-	{
-		log_error("Could not retrieve stream info");
-		return -1;
-	}
-
-	
-	// dumps codec information for audio and video
-	av_dump_format(pFormatCtx, 0, argv[1], 0);
-
-
-
-	AVCodec *pCodec = NULL;
-	AVCodecParameters *pCodecParameters = NULL;
-	int videoStreamIndex = -1;
-
-	for (unsigned int i = 0; i < pFormatCtx->nb_streams; i++) 
-	{
-		AVCodecParameters *pLocalCodecParameters = NULL; 
-		pLocalCodecParameters = pFormatCtx->streams[i]->codecpar;
-
-		AVCodec *pLocalCodec = NULL;
-		pLocalCodec = avcodec_find_decoder(pLocalCodecParameters->codec_id);
-		
-		if (pLocalCodec == NULL) 
-		{
-			log_debug("Unsupported codec");
-			continue;
-		}
-
-		// specific for video and audio
-		if (pLocalCodecParameters->codec_type == AVMEDIA_TYPE_VIDEO) {
-			
-			if (videoStreamIndex == -1)
-			{
-				videoStreamIndex = i;
-				log_info("videoStreamIndex %d", videoStreamIndex);
-				pCodec = pLocalCodec;
-				pCodecParameters = pLocalCodecParameters;
-			}
-			log_info("Video Codec: resolution %d x %d", pLocalCodecParameters->width, pLocalCodecParameters->height);
-		} 
-		else if (pLocalCodecParameters->codec_type == AVMEDIA_TYPE_AUDIO) {
-			log_info("Audio Codec: %d channels, sample rate %d", pLocalCodecParameters->channels, pLocalCodecParameters->sample_rate);
-		}
-
-		log_info("\tCodec %s ID %d bit_rate %lld", pLocalCodec->long_name, pLocalCodec->id, pLocalCodecParameters->bit_rate);
-		
-
-		if (videoStreamIndex == -1)
-		{
-            log_error("File %s does not contain a video stream", argv[1]);
-			return -1; 
-		}
-
-		AVCodecContext *pCodecCtx = avcodec_alloc_context3(pCodec);
-		if (!pCodecCtx)
-		{
-            log_error("Failed to allocate memory for codec context");
-			return -1;
-		}
-
-		if (avcodec_parameters_to_context(pCodecCtx, pCodecParameters) < 0)
-		{
-            log_error("Failed to copy codec params to codec context");
-		}
-
-		if (avcodec_open2(pCodecCtx, pCodec, NULL) < 0)
-		{
-            log_error("Failed to open codec through avcodec_open2");
-			return -1;
-		}
-
-		
-		AVPacket *pPacket = av_packet_alloc();
-		if (!pPacket)
-		{
-            log_error("Failed to allocate memory for AVPacket");
-			return -1;
-		}
-
-		AVFrame *pFrame = av_frame_alloc();
-		if (!pFrame)
-		{
-            log_error("Failed to allocate memory for AVFrame");
-			return -1;
-		}
-
-		int response = 0;
-		int how_many_packets_to_process = 8;
-		
-		while (av_read_frame(pFormatCtx, pPacket) >= 0)
-		{
-			if (pPacket->stream_index == videoStreamIndex)
-			{
-				log_info("AVPacket->pts %" PRId64, pPacket->pts);
-				response = decode_packet(pPacket, pCodecCtx, pFrame);
-				if (response < 0)
-					break;
-				if (--how_many_packets_to_process <= 0)
-					break;
-			}
-
-			av_packet_unref(pPacket);
-		}
-
-		log_info("Releasing all resources");
-
-		avformat_close_input(&pFormatCtx);
-		av_packet_free(&pPacket);
-		av_frame_free(&pFrame);
-		avcodec_free_context(&pCodecCtx);
-		return 0;
-	}
-}
-
-

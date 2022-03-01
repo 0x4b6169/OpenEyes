@@ -52,6 +52,12 @@ endif()
 # Fetch Content added as of 3.11, downloads during config step
 include(FetchContent)
 
+#find_library(avfoundation REQUIRED)
+find_library(FWAVFoundation NAMES AVFoundation)
+message(">>>> find_library(AVFoundation): ${FWAVFoundation}")
+
+find_package(SDL2 REQUIRED)
+
 # The list of subdirectories where a CMakeLists.txt file exists to compile code prior to configuring the executable
 add_subdirectory(lib)
 add_subdirectory(src)
@@ -70,7 +76,7 @@ add_executable(${PROJECT_NAME}
 		${SOURCES})
 
 # Include lib headers
-target_include_directories(${PROJECT_NAME} PRIVATE ${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR} ${AVUTIL_INCLUDE_DIR})
+target_include_directories(${PROJECT_NAME} PRIVATE ${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR} ${AVUTIL_IMGUTILS_INCLUDE_DIR} ${SDL2_INCLUDE_DIRS} ${SWSCALE_INCLUDE_DIR} ${AVDEVICE_INCLUDE_DIR})
 
 # Link libs
-target_link_libraries(${PROJECT_NAME} PRIVATE ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY} ${AVUTIL_LIBRARY} unity)
+target_link_libraries(${PROJECT_NAME} PRIVATE ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY} ${AVUTIL_IMGUTILS_LIBRARY} unity "-framework AVFoundation" ${SDL2_LIBRARIES} ${SWSCALE_LIBRARY} ${AVDEVICE_LIBRARY})
