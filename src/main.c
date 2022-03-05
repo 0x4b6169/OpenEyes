@@ -3,29 +3,60 @@
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
-#include "logging/log.h"
 #include <SDL2/SDL.h>
+#include "logging/log.h"
 
-#define SCREEN_WIDTH 1920
-#define SCREEN_HEIGHT 1080
+#define INITIAL_SCREEN_WIDTH 3584
+#define INITIAL_SCREEN_HEIGHT 2240
+#define FINAL_SCREEN_WIDTH 480
+#define FINAL_SCREEN_HEIGHT 300
 
-// https://www.theverge.com/2022/1/20/22892152/google-project-iris-ar-headset-2024 people to network with
-
-// First method is initialization of the FFMpeg libary. This library takes an input device (in this application's case the AV input device is
-// programmed to capture the screen of the device). This method should be reusable for any input device for any future projects with varying
-// operating systems / input drivers in general.
-
-// Second method is the initialization, input-setting, and rendering of an SDL2 window. This functionality may never be used, but is a cool project to
-// have completed in the event that I can paint to the screen. Initially planning to use warning windows that pop-up on screen at the bottom right that
-// describe threat level.
-
-// Third method will be a data streaming method that will send frames to a machine learning algorithm. This algorithm will hopefully live on the same
-// device but may also be in the cloud initially for PoC.
-
-
-// Idea - turn this application into a workflow tool with autocomplete ideas based on what the user does on an average day
+#define MBP_SCREEN_RES "3584x2240"
 
 int thread_exit = 0;
+
+static void save_gray_frame(unsigned char *buf, int wrap, int xsize, int ysize, char *filename)
+{
+    FILE *f;
+    int i;
+    char file[512];
+    strcpy(file, "./output/");
+    strcat(file, filename);
+    f = fopen(file,"w");
+
+    fprintf(f, "P5\n%d %d\n%d\n", xsize, ysize, 255);
+
+    for (i = 0; i < ysize; i++)
+        fwrite(buf + i * wrap, 1, xsize, f);
+    fclose(f);
+}
+
+static int decode_packet(AVPacket *pPacket, AVCodecContext *pCodecCtx, AVFrame *pFrame)
+{
+    log_info("Frame %d (type=%c, size=%d, format=%d) pts %d key_frame %d [DTS %d]",
+             pCodecCtx->frame_number,
+             pFrame->pkt_size,
+             pFrame->format,
+             pFrame->pts,
+             pFrame->key_frame,
+             pFrame->coded_picture_number);
+
+    log_info("pFrame height: %d, frameYUV width: %d, frameYUV format: %d",
+             pFrame->height,
+             pFrame->width,
+             pFrame->format);
+
+        char frame_filename[1024];
+        snprintf(frame_filename, sizeof(frame_filename), "%s-%d.pgm", "frame", pCodecCtx->frame_number);
+
+        if (pFrame->format != AV_PIX_FMT_YUV420P)
+        {
+            log_debug("The generated file may not be a grayscale image");
+        }
+
+        save_gray_frame(pFrame->data[0], pFrame->linesize[0], pFrame->width, pFrame->height, frame_filename);
+    return 0;
+}
 
 int sfp_refresh_thread(void *opaque)
 {
@@ -59,12 +90,13 @@ int main(int argc, char *argv[]) {
     avdevice_register_all();
 
     AVDictionary *options = NULL;
-    av_dict_set(&options, "framerate", "30", 0);
-    av_dict_set(&options, "video_size", "1920x1080", 0);
+    av_dict_set(&options, "framerate", "1", 0);
+    av_dict_set(&options, "video_size", MBP_SCREEN_RES, 0);
 
     AVInputFormat *inputFormat;
     inputFormat = av_find_input_format("avfoundation");
 
+    // 1:none - 1 returns screen capture for video input and none ignores audio
     ret = avformat_open_input(&formatContext, "1:none", inputFormat, &options);
     if (ret < 0)
     {
@@ -154,7 +186,8 @@ int main(int argc, char *argv[]) {
         SDL_Window *window = NULL;
         SDL_Renderer *renderer = NULL;
 
-        window = SDL_CreateWindow("OpenPlaya", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE);
+        window = SDL_CreateWindow("OpenPlaya", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                                  FINAL_SCREEN_HEIGHT, FINAL_SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE);
         if (window == NULL)
         {
             log_error( "Could not create SDL window - %s", SDL_GetError());
@@ -171,23 +204,28 @@ int main(int argc, char *argv[]) {
         SDL_Rect rect;
         rect.x = 0;
         rect.y = 0;
-        rect.w = SCREEN_WIDTH;
-        rect.h = SCREEN_HEIGHT;
+        rect.w = INITIAL_SCREEN_WIDTH;
+        rect.h = INITIAL_SCREEN_HEIGHT;
 
         AVPacket *packet = NULL;
         packet = av_packet_alloc();
 
         log_info("before sws context");
 
-        frameYUV->width = frame->width = codecContext->width;
-        frameYUV->height = frame->height = codecContext->height;
+        /* Must uncomment below, and comment the corresponding lines, to make video work right now... */
+//        frameYUV->width = frame->width = codecContext->width;
+//        frameYUV->height = frame->height = codecContext->height;
+        frame->width = codecContext->width;
+        frame->height = codecContext->height;
+        frameYUV->width = FINAL_SCREEN_WIDTH;
+        frameYUV->height = FINAL_SCREEN_HEIGHT;
         frameYUV->channels = frame->channels;
         frameYUV->channel_layout = frame->channel_layout;
         frameYUV->format = AV_PIX_FMT_YUV420P;
 
         struct SwsContext *img_sws_context = NULL;
         img_sws_context = sws_getCachedContext(img_sws_context, frame->width, frame->height,
-                                               codecContext->pix_fmt, frameYUV->width, frameYUV->height,
+                                               codecContext->pix_fmt, FINAL_SCREEN_WIDTH, FINAL_SCREEN_HEIGHT,
                                                AV_PIX_FMT_YUV420P, 0, NULL, NULL, NULL);
 
         // Allocate destination memory for frameYUV (target) buffer
@@ -219,8 +257,6 @@ int main(int argc, char *argv[]) {
                 return -1;
             }
 
-            log_info("wait for event");
-
             if (event->type == SDL_USEREVENT)
             {
                 log_info("sdluserevent");
@@ -251,24 +287,25 @@ int main(int argc, char *argv[]) {
                                  frame->width,
                                  frame->format);
 
+                        sws_scale(img_sws_context, (const uint8_t *const *) frame->data, frame->linesize, 0, INITIAL_SCREEN_HEIGHT,
+                                  frameYUV->data, frameYUV->linesize);
+
                         log_info("frameYUV height: %d, frameYUV width: %d, frameYUV format: %d",
                                  frameYUV->height,
                                  frameYUV->width,
                                  frameYUV->format);
 
-                        log_info("Before scale");
+//                        decode_packet(packet, codecContext, frameYUV);
 
-                        sws_scale(img_sws_context, (const uint8_t *const *) frame->data, frame->linesize, 0, SCREEN_HEIGHT,
-                                  frameYUV->data, frameYUV->linesize);
-
-
-
-                        log_info("After scale");
-
-                        SDL_UpdateYUVTexture(texture, &rect,
+                        ret = SDL_UpdateYUVTexture(texture, &rect,
                                              frameYUV->data[0], frameYUV->linesize[0],
                                              frameYUV->data[1], frameYUV->linesize[1],
                                              frameYUV->data[2], frameYUV->linesize[2]);
+                        if (ret < 0)
+                        {
+                            log_error( "Did not find event - %s", SDL_GetError());
+                            return -1;
+                        }
 
                         SDL_RenderClear(renderer);
                         SDL_RenderCopy(renderer, texture, NULL, &rect);
@@ -283,17 +320,11 @@ int main(int argc, char *argv[]) {
                 thread_exit = -1;
                 break;
             }
-
-//            else {
-//                log_error("Event type is not SDL_USEREVENT");
-//                thread_exit = -1;
-//                break;
-//            }
         }
 
         av_packet_free(&packet);
         av_frame_free(&frame);
-
+        av_frame_free(&frameYUV);
     }
 
     SDL_Quit();

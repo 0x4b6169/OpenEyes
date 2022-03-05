@@ -72,8 +72,7 @@ file(GLOB_RECURSE SOURCES
 		src/*.h
 		src/*.c)
 
-add_executable(${PROJECT_NAME}
-		${SOURCES})
+add_executable(${PROJECT_NAME} ${SOURCES})
 
 # Include lib headers
 target_include_directories(${PROJECT_NAME} PRIVATE ${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR} ${AVUTIL_IMGUTILS_INCLUDE_DIR} ${SDL2_INCLUDE_DIRS} ${SWSCALE_INCLUDE_DIR} ${AVDEVICE_INCLUDE_DIR})
