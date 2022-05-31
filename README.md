@@ -1,7 +1,7 @@
 # OpenPlaya
 
 ### About
-A place where you can't phish.
+A place where you can't phish. This tool is a PoC to capture the screen for further processing. At this point, the tool is only capable of recording the screen with FFMpeg and displaying the recording in a window managed by SDL2.
 
 ### Build Steps (Navigate to /docs to read md file, hosting Doxygen files soon)
 - @subpage Build-MacOS.md

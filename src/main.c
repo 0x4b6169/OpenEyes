@@ -4,7 +4,7 @@
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
 #include <SDL2/SDL.h>
-#include "logging/log.h"
+#include "util/logging/log.h"
 
 #define INITIAL_SCREEN_WIDTH 3584
 #define INITIAL_SCREEN_HEIGHT 2240
@@ -20,7 +20,7 @@ static void save_gray_frame(unsigned char *buf, int wrap, int xsize, int ysize, 
     FILE *f;
     int i;
     char file[512];
-    strcpy(file, "./output/");
+    strcpy(file, ""); // change this to output to file external drive
     strcat(file, filename);
     f = fopen(file,"w");
 
