@@ -1,5 +1,7 @@
 # OpenPlaya
 
+__Please note that all code currently is functional for MacOS and currently exists in src/main.c. The GitHub user also was messed up due to a bug that I found in GitHub's email logic..__
+
 ### About
 A place where you can't phish. This tool is a PoC to capture the screen for further processing. At this point, the tool is only capable of recording the screen with FFMpeg and displaying the recording in a window managed by SDL2.
 
